@@ -231,11 +231,21 @@ def from_checkpoint(model_path, input_names, output_names):
     return frozen_graph, input_names, output_names
 
 
-def _from_saved_model_v1(sess, model_path, input_names, output_names, tag, signatures):
+def _from_saved_model_v1(sess, model_path, input_names, output_names, tag, signatures, concrete_function_index):
     """Load tensorflow graph from saved_model."""
 
     wrn_no_tag = "'--tag' not specified for saved_model. Using --tag serve"
     wrn_empty_tag = "'--tag' value is empty string. Using tag =[[]]"
+
+    wrn_no_tag = "'--tag' not specified for saved_model. Using --tag serve"
+    wrn_empty_tag = "'--tag' value is empty string. Using tag =[[]]"
+    wrn_sig_1 = "'--signature_def' not specified, using first signature: %s"
+    err_many_sig = "Cannot load multiple signature defs in TF2.x: %s"
+    err_no_call = "Model doesn't contain usable concrete functions under  __call__. Try --signature-def instead."
+    err_index = "Invalid concrete_function value: %i. Valid values are [0 to %i]"
+    err_no_sig = "No signatures found in model. Try --concrete_function instead."
+    err_sig_nomatch = "Specified signature not in model %s"
+    err_large_model = "model exceeds maximum protobuf size of 2GB. Try running with --large_model flag."
 
     if tag is None:
         tag = [tf.saved_model.tag_constants.SERVING]
@@ -263,6 +273,18 @@ def _from_saved_model_v1(sess, model_path, input_names, output_names, tag, signa
         # TF1.12 changed the api
         get_signature_def = lambda meta_graph_def, k: meta_graph_def.signature_def[k]
 
+    concrete_func = None
+    if concrete_function_index is not None:
+        utils.make_sure(hasattr(imported, "__call__"), err_no_call)
+        utils.make_sure(concrete_function_index < len(imported.__call__.concrete_functions),
+                        err_index, concrete_function_index, len(imported.__call__.concrete_functions) - 1)
+        sig = imported.__call__.concrete_functions[concrete_function_index].structured_input_signature[0]
+        concrete_func = imported.__call__.get_concrete_function(*sig)
+    elif signatures:
+        concrete_func = imported.signature_def[signatures[0]]
+    else:
+        concrete_func = imported.signature_def[signatures[0]]
+
     if input_names is None:
         input_names = []
         for k in signatures:
@@ -280,7 +302,21 @@ def _from_saved_model_v1(sess, model_path, input_names, output_names, tag, signa
                     output_names.append(output_tensor.name)
                     tensors_to_rename[output_tensor.name] = structured_name
     frozen_graph = freeze_session(sess, input_names=input_names, output_names=output_names)
-    return frozen_graph, input_names, output_names, tensors_to_rename
+
+    table_names, key_dtypes, value_dtypes = get_hash_table_info(frozen_graph)
+    placeholder_to_table_info = {}
+
+    initialized_tables = {}
+    for n, k_dtype, val_dtype in zip(table_names, key_dtypes, value_dtypes):
+        h = lookup_ops.hash_table_v2(k_dtype, val_dtype, shared_name=n)
+        try:
+            k, v = lookup_ops.lookup_table_export_v2(h, k_dtype, val_dtype)
+            initialized_tables[n] = (k.eval(), v.eval())
+            #initialized_tables[n] = (k.numpy(), v.numpy())
+        except Exception:  # pylint: disable=broad-except
+            logger.warning("Could not initialize table with shared_name = %r", n)
+
+    return frozen_graph, input_names, output_names, concrete_func, imported, initialized_tables, tensors_to_rename
 
 
 def _get_hash_table_info_from_trackable(trackable, table_names, key_dtypes, value_dtypes,
@@ -314,6 +350,7 @@ def _remove_non_variable_resources_from_captures(concrete_func):
     resource_id_to_placeholder = {}
     graph_captures_copy = None
     func_captures_copy = None
+    id_to_resource = {}
     if hasattr(concrete_func.graph, '_captures') and hasattr(concrete_func, '_captured_inputs'):
         graph_captures_copy = concrete_func.graph._captures.copy()
         func_captures_copy = concrete_func._captured_inputs.copy()
@@ -322,6 +359,7 @@ def _remove_non_variable_resources_from_captures(concrete_func):
             val_tensor, name_tensor = v
             if val_tensor.dtype == tf.resource and id(val_tensor) not in variable_handles:
                 resource_id_to_placeholder[id(val_tensor)] = name_tensor.name.split(':')[0]
+                id_to_resource[id(val_tensor)] = val_tensor
                 del concrete_func.graph._captures[k]
                 for i in reversed(range(len(concrete_func._captured_inputs))):
                     if concrete_func._captured_inputs[i] is val_tensor:
@@ -335,7 +373,7 @@ def _remove_non_variable_resources_from_captures(concrete_func):
     else:
         logger.warning(
             "Could not search for non-variable resources. Concrete function internal representation may have changed.")
-    return resource_id_to_placeholder, graph_captures_copy, func_captures_copy
+    return resource_id_to_placeholder, graph_captures_copy, func_captures_copy, id_to_resource
 
 
 def _restore_captured_resources(concrete_func, graph_captures_copy, func_captures_copy):
@@ -397,6 +435,8 @@ def _from_saved_model_v2(model_path, input_names, output_names, tag, signature_d
             args, kwargs = concrete_func.structured_input_signature
             structured_inputs = [t.name for t in args if isinstance(t, tf.TensorSpec)] + sorted(kwargs.keys())
             structured_inputs = set(inp + ":0" for inp in structured_inputs)
+            structured_input = sorted(structured_inputs)
+            tensors_to_rename.update(zip(inputs, structured_input))
             if any(inp in structured_inputs for inp in inputs):
                 inputs = [inp for inp in inputs if inp in structured_inputs]
     else:
@@ -416,7 +456,7 @@ def _from_saved_model_v2(model_path, input_names, output_names, tag, signature_d
         logger.info("Outputs not left as None; will use provided names not structured output names.")
 
     # Avoid errors due to bug in TF freezing
-    removed_resource_to_placeholder, graph_captures_copy, func_captures_copy = \
+    removed_resource_to_placeholder, graph_captures_copy, func_captures_copy, id_to_resource = \
         _remove_non_variable_resources_from_captures(concrete_func)
 
     try:
@@ -443,9 +483,15 @@ def _from_saved_model_v2(model_path, input_names, output_names, tag, signature_d
         except Exception:  # pylint: disable=broad-except
             logger.warning("Could not initialize table with shared_name = %r", n)
 
-    for placeholder in removed_resource_to_placeholder.values():
+#    for placeholder in removed_resource_to_placeholder.values():
+    for resource_id, placeholder in removed_resource_to_placeholder.items():
+        import uuid
         if placeholder not in placeholder_to_table_info:
-            logger.error("Could not find table resource to replace placeholder %s", placeholder)
+            handle = id_to_resource[resource_id]
+            n = str(uuid.uuid4()).encode()
+            k, v = lookup_ops.lookup_table_export_v2(handle, tf.int64, tf.int64)
+            initialized_tables[n] = (k.numpy(), v.numpy())
+            placeholder_to_table_info[placeholder] = (n, tf.int64.as_datatype_enum, tf.int64.as_datatype_enum)
 
     replace_placeholders_with_tables(frozen_graph, placeholder_to_table_info)
 
@@ -473,11 +519,13 @@ def from_saved_model(model_path, input_names, output_names, tag=None,
                 result += [tensors_to_rename]
         else:
             with tf_session() as sess:
-                frozen_graph, input_names, output_names, tensors_to_rename = \
-                    _from_saved_model_v1(sess, model_path, input_names, output_names, tag, signatures)
+                frozen_graph, input_names, output_names, concrete_func, imported, initialized_tables, tensors_to_rename = \
+                    _from_saved_model_v1(sess, model_path, input_names, output_names, tag, signatures, concrete_function)
                 result = [frozen_graph, input_names, output_names]
+                if return_concrete_func:
+                    result += [concrete_func, imported]
                 if return_initialized_tables:
-                    result += [{}]
+                    result += [initialized_tables]
                 if return_tensors_to_rename:
                     result += [tensors_to_rename]
     tf_reset_default_graph()
