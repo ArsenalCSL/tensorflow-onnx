@@ -624,6 +624,8 @@ def process_parsed_graph(g, custom_op_handlers, inputs_as_nchw, continue_on_erro
         rewrite_biasadd_with_conv2d,
         rewrite_layer_normalization,
         rewrite_gemm,
+        # BOSS Zhipin additions
+        rewrite_input_name_for_trt,
     ]
 
     if custom_rewriter is not None:
