@@ -350,6 +350,8 @@ def run_rewriters(g, funcs, continue_on_error):
     # 1. we don't sort graph here, rewriter is expected to do it on its own.
     # 2. the graph here may have circles, current topological_sort cannot handle it.
     for func in funcs:
+        import time
+        beg = time.time()
         try:
             ops = func(g, g.get_nodes())
             g.reset_nodes(ops)
@@ -361,6 +363,10 @@ def run_rewriters(g, funcs, continue_on_error):
                 logger.info(ex_ext)
             else:
                 raise ex
+        finally:
+            end = time.time()
+            logger.info(f'Rewriter "{func}": {end - beg}')
+            pass
 
         if utils.is_debug_mode():
             broken_outputs = g.check_integrity()
