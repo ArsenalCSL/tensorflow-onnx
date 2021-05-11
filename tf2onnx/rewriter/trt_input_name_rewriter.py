@@ -27,4 +27,4 @@ def rewrite_input_name_for_trt(g, ops):
         g.replace_all_inputs(o, n)
         g.remove_node(old_input.name)
 
-    return ops
+    return g.get_nodes()
