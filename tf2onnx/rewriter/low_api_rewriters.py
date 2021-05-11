@@ -92,7 +92,9 @@ class LowApiCategoryMapperRewriter(LowApiRewriterBase):
     """
     def __init__(self, g):
         super().__init__(g)
-        self.cm_pattern = OpTypePattern('CategoryMapper', name='cm_op')
+        self.cm_pattern = OpTypePattern('CategoryMapper', name='cm_op', inputs=[
+            OpTypePattern('Cast', name='cast_op')
+        ])
         self.cm_pattern = GraphMatcher(self.cm_pattern, allow_reorder=False)
 
     def rewrite(self, ops):
@@ -101,26 +103,28 @@ class LowApiCategoryMapperRewriter(LowApiRewriterBase):
             assert not self.has_scatter_elements(ops)
 
         for m in matches:
-            op = m.get_op('cm_op')
+            inp_op = m.get_op('cast_op')
+            cm_op = m.get_op('cm_op')
 
-            vocab = list(map(int, op.attr['cats_strings'].strings))
+            vocab = list(map(int, cm_op.attr['cats_strings'].strings))
             new_op = self.g.make_node(
                 'CategoricalPlugin',
-                inputs=op.input.copy(),
+                inputs=inp_op.input.copy(),
                 attr={
                     'vocab_list': vocab,
-                    'vocab_index': op.attr['cats_int64s'].ints,
+                    'vocab_index': cm_op.attr['cats_int64s'].ints,
                     'vocab_len': len(vocab),
-                    'default_value': op.attr['default_int64'].i,
+                    'default_value': cm_op.attr['default_int64'].i,
                     'is_feacol': False,
                 },
                 dtypes=[TensorProto.INT64],
-                shapes=op.output_shapes.copy(),
+                shapes=inp_op.output_shapes.copy(),
             )
 
             # Rewire consumers to the new node.
-            self.g.replace_all_inputs(op.output[0], new_op.output[0])
-            self.g.remove_node(op.name)
+            self.g.replace_all_inputs(cm_op.output[0], new_op.output[0])
+            self.g.remove_node(inp_op.name)
+            self.g.remove_node(cm_op.name)
 
         return self.g.get_nodes()
 
