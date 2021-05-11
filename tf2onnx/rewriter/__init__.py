@@ -26,6 +26,7 @@ from tf2onnx.rewriter.layer_normalization_rewriter import rewrite_layer_normaliz
 from tf2onnx.rewriter.trt_input_name_rewriter import rewrite_input_name_for_trt
 from tf2onnx.rewriter.low_api_rewriters import \
     rewrite_low_api_bucketize, rewrite_low_api_category_mapper, rewrite_low_api_string_to_hash_bucket_fast
+from tf2onnx.rewriter.string_to_hash_plugin_rewriter import rewrite_string_to_hash_plugin
 
 __all__ = [
     "rewrite_cond",
@@ -54,4 +55,5 @@ __all__ = [
     'rewrite_low_api_bucketize',
     'rewrite_low_api_category_mapper',
     'rewrite_low_api_string_to_hash_bucket_fast',
+    'rewrite_string_to_hash_plugin',
 ]

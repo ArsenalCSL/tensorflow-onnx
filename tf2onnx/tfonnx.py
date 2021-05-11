@@ -648,7 +648,9 @@ def process_parsed_graph(g, custom_op_handlers, inputs_as_nchw, continue_on_erro
         rewrite_low_api_bucketize,
         rewrite_low_api_category_mapper,
         rewrite_low_api_string_to_hash_bucket_fast,
-        rewrite_input_name_for_trt,
+
+        rewrite_string_to_hash_plugin,  # Simplifies StringToHashPlugin with constant output to an actual constant.
+        rewrite_input_name_for_trt,  # Renames inputs using a somewhat irresponsible method. So let's do this last.
     ]
     if constants.TARGET_RS5 in target:
         late_rewriters.append(rewrite_incomplete_type_support_rs5)
