@@ -624,8 +624,6 @@ def process_parsed_graph(g, custom_op_handlers, inputs_as_nchw, continue_on_erro
         rewrite_biasadd_with_conv2d,
         rewrite_layer_normalization,
         rewrite_gemm,
-        # BOSS Zhipin additions
-        rewrite_input_name_for_trt,
     ]
 
     if custom_rewriter is not None:
@@ -645,7 +643,13 @@ def process_parsed_graph(g, custom_op_handlers, inputs_as_nchw, continue_on_erro
         raise exceptions[0]
 
     # post-processing rewriters
-    late_rewriters = []
+    late_rewriters = [
+        # BOSS Zhipin additions.
+        rewrite_low_api_bucketize,
+        rewrite_low_api_category_mapper,
+        rewrite_low_api_string_to_hash_bucket_fast,
+        rewrite_input_name_for_trt,
+    ]
     if constants.TARGET_RS5 in target:
         late_rewriters.append(rewrite_incomplete_type_support_rs5)
     if constants.TARGET_RS6 in target:
@@ -654,6 +658,7 @@ def process_parsed_graph(g, custom_op_handlers, inputs_as_nchw, continue_on_erro
         run_rewriters(g, late_rewriters, continue_on_error)
 
     # onnx requires topological sorting
+    g.delete_unused_nodes(output_names)
     topological_sort(g, continue_on_error)
 
     g.update_proto()
