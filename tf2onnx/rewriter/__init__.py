@@ -23,6 +23,7 @@ from tf2onnx.rewriter.transpose_rewriter import rewrite_transpose
 from tf2onnx.rewriter.conv2d_with_add_rewriter import rewrite_biasadd_with_conv2d
 from tf2onnx.rewriter.quantization_ops_rewriter import rewrite_quantize_and_dequantize
 from tf2onnx.rewriter.layer_normalization_rewriter import rewrite_layer_normalization
+from tf2onnx.rewriter.trt_input_name_rewriter import rewrite_input_name_for_trt
 
 
 __all__ = [
@@ -46,5 +47,6 @@ __all__ = [
     "rewrite_generic_loop",
     "rewrite_biasadd_with_conv2d",
     "rewrite_quantize_and_dequantize",
-    "rewrite_layer_normalization"
+    "rewrite_layer_normalization",
+    'rewrite_input_name_for_trt',
 ]
