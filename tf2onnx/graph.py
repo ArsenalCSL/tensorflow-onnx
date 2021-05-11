@@ -14,6 +14,7 @@ import copy
 import logging
 import six
 import numpy as np
+from typing import List
 
 from onnx import helper, numpy_helper, shape_inference, OperatorSetIdProto, AttributeProto, TensorProto
 from tf2onnx import utils, __version__
@@ -56,6 +57,19 @@ class Node(object):
         for a in node.attribute:
             self._attr[a.name] = a
         self._skip_conversion = skip_conversion
+
+    def __eq__(self, other):
+        if isinstance(other, Node):
+            return \
+                self._op == other._op and \
+                self._input == other._input and \
+                self._output == other._output and \
+                self._attr == other._attr
+        else:
+            return False
+
+    def __hash__(self):
+        return hash((self._op.op_type, self._op.name))
 
     @property
     def input(self):
@@ -1728,3 +1742,28 @@ class GraphUtil(object):
                 g.add_graph_input(name, dtype, shape)
             else:
                 g.add_graph_input_with_default(name, g.get_node_by_name(name), dtype, shape)
+
+
+def get_upstream_nodes(n: List[Node]) -> List[List[Node]]:
+    """
+    This returns a list of the upstream nodes beginning from the supplied starting point(s).
+    The list is ordered by distance. Hence, the shortest route from any of the inputs nodes
+    to a node in index "i" is "i" hops long. If a node has multiple connections to downstream
+    nodes, only the shortest connection is considered.
+    """
+    up_nodes_seq = []
+    up_nodes_set = set()
+    cur = set(n)
+    while cur:
+        seq = []
+        nxt = []
+        for n in cur:
+            if n in up_nodes_set:
+                continue
+            nxt += n.inputs
+            up_nodes_set.add(n)
+            seq.append(n)
+        up_nodes_seq.append(seq)
+        cur = set(nxt)
+
+    return up_nodes_seq
