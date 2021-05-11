@@ -5,7 +5,6 @@
 tf2onnx.rewrite - cut :0 from placeholders to make them TensorRT compatible.
 """
 import logging
-import re
 from abc import ABC
 from onnx import TensorProto
 from tf2onnx.graph_matcher import GraphMatcher, OpTypePattern
