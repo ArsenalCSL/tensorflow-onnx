@@ -1,6 +1,10 @@
+import logging
 import numpy as np
 import tf2onnx.utils as utils
 from tf2onnx.graph_matcher import GraphMatcher, OpTypePattern
+
+
+logger = logging.getLogger(__name__)
 
 
 def rewrite_string_to_hash_plugin(g, ops):
@@ -20,5 +24,6 @@ def rewrite_string_to_hash_plugin(g, ops):
 
         # Drop the old value.
         g.remove_node(s2h_op.name)
+    logger.info(f'Folded {len(matches)} instances of the StringToHashPlugin.')
 
     return g.get_nodes()

@@ -1,9 +1,3 @@
-# SPDX-License-Identifier: Apache-2.0
-
-
-"""
-tf2onnx.rewrite - cut :0 from placeholders to make them TensorRT compatible.
-"""
 import logging
 from abc import ABC
 from onnx import TensorProto
@@ -37,6 +31,8 @@ class LowApiBucketizeRewriter(LowApiRewriterBase):
         if matches:
             assert not self.has_scatter_elements(ops)
 
+        success_float = 0
+        success_int = 0
         for m in matches:
             op = m.get_op('buck_op')
             inp_op = op.inputs[0]
@@ -54,6 +50,7 @@ class LowApiBucketizeRewriter(LowApiRewriterBase):
                     dtypes=[TensorProto.INT64],
                     shapes=inp_op.output_shapes.copy(),
                 )
+                success_float += 1
             else:
                 if len(bounds.ints) > 0:
                     bounds = bounds.ints
@@ -73,11 +70,13 @@ class LowApiBucketizeRewriter(LowApiRewriterBase):
                     dtypes=[TensorProto.INT64],
                     shapes=inp_op.output_shapes.copy(),
                 )
+                success_int += 1
 
             # Rewire consumers to the new node.
             self.g.replace_all_inputs(op.output[0], new_op.output[0])
             self.g.remove_node(op.name)
 
+        logger.info(f'Replaced {success_float} float and {success_int} integer Bucketize nodes.')
         return self.g.get_nodes()
 
 
@@ -125,6 +124,7 @@ class LowApiCategoryMapperRewriter(LowApiRewriterBase):
             self.g.remove_node(inp_op.name)
             self.g.remove_node(cm_op.name)
 
+        logger.info(f'Replaced {len(matches)} categorical CategoryMapper nodes.')
         return self.g.get_nodes()
 
 
@@ -167,6 +167,7 @@ class LowApiStringToHashBucketFastRewriter(LowApiRewriterBase):
             self.g.remove_node(inp_op.name)
             self.g.remove_node(s2h_op.name)
 
+        logger.info(f'Replaced {len(matches)} categorical StringToHashBucketFast nodes.')
         return self.g.get_nodes()
 
 
