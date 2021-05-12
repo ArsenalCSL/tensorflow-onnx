@@ -40,12 +40,13 @@ class LowApiBucketizeRewriter(LowApiRewriterBase):
             # Forge new node.
             bounds = op.attr['boundaries']
             if inp_op.output_dtypes[0] == TensorProto.FLOAT:
+                bounds = bounds.floats
                 new_op = self.g.make_node(
                     'FloatBucketizePlugin',
                     inputs=inp_op.output.copy(),
                     attr={
                         'boundaries': bounds,
-                        'boundaries_len': len(bounds.floats),
+                        'boundaries_len': len(bounds),
                     },
                     dtypes=[TensorProto.INT64],
                     shapes=inp_op.output_shapes.copy(),
