@@ -645,6 +645,7 @@ def process_parsed_graph(g, custom_op_handlers, inputs_as_nchw, continue_on_erro
     # post-processing rewriters
     late_rewriters = [
         # BOSS Zhipin additions.
+        rewrite_feature_column,  # Needs to be called before low_api rewrites.
         rewrite_low_api_bucketize,
         rewrite_low_api_category_mapper,
         rewrite_low_api_string_to_hash_bucket_fast,
