@@ -13,6 +13,7 @@ from __future__ import unicode_literals
 
 import argparse
 import os
+import pickle
 import sys
 from distutils.version import LooseVersion
 
@@ -85,6 +86,15 @@ def get_args():
                         action="store_true")
     # experimental
     parser.add_argument("--inputs-as-nchw", help="transpose inputs as from nhwc to nchw")
+
+    # BOSS custom
+    parser.add_argument('--skip-final-optimization',
+                        help='Do not execute the final optimization step.',
+                        action='store_true')
+    parser.add_argument('--pickle-tfonnx',
+                        help='This will also save a pickled version of tfonnx graph as is.',
+                        action='store_true')
+
     args = parser.parse_args()
 
     args.shape_override = None
@@ -134,7 +144,9 @@ def make_default_custom_op_handler(domain):
     return default_custom_op_handler
 
 
-def _convert_common(frozen_graph, name="unknown", large_model=False, output_path=None,
+def _convert_common(frozen_graph, name="unknown",
+                    skip_final_optimization=False, pickle_tfonnx=False,
+                    large_model=False, output_path=None,
                     output_frozen_graph=None, **kwargs):
     """Common processing for conversion."""
 
@@ -151,10 +163,23 @@ def _convert_common(frozen_graph, name="unknown", large_model=False, output_path
         if not kwargs.get("tflite_path"):
             tf.import_graph_def(frozen_graph, name='')
         g = process_tf_graph(tf_graph, const_node_values=const_node_values, **kwargs)
-        onnx_graph = optimizer.optimize_graph(g)
+        onnx_graph = g if skip_final_optimization else optimizer.optimize_graph(g)
         model_proto = onnx_graph.make_model("converted from {}".format(name),
                                             external_tensor_storage=external_tensor_storage)
     if output_path:
+        if pickle_tfonnx:
+            # Paranoid test to make sure the resulting model is actually usable.
+            p = pickle.dumps(g)
+            tmp = pickle.loads(p)
+            pickle_success = {
+                attr: getattr(g, attr) == getattr(tmp, attr)
+                for attr in {*dir(g), *dir(tmp)}
+                if type(getattr(g, attr)).__name__ not in ['method', 'method-wrapper', 'builtin_function_or_method']
+            }
+            assert(all(pickle_success.values()))
+            with open(output_path + '.pkl', "wb") as f:
+                f.write(p)
+
         if large_model:
             utils.save_onnx_zip(output_path, model_proto, external_tensor_storage)
         else:
@@ -236,6 +261,8 @@ def main():
         model_proto, _ = _convert_common(
             graph_def,
             name=model_path,
+            skip_final_optimization=args.skip_final_optimization,
+            pickle_tfonnx=args.pickle_tfonnx,
             continue_on_error=args.continue_on_error,
             target=args.target,
             opset=args.opset,
