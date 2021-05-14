@@ -28,14 +28,12 @@ def rewrite_feature_column(g, ops):
 
     block_end = [
         # Reshape end style.
-        OpTypePattern('*', name='next_node', inputs=[
-            OpTypePattern('Reshape', name='last_node', inputs=[
-                OpTypePattern('Reshape'),
-                OpTypePattern('Cast', inputs=[
-                    OpTypePattern('Concat', inputs=[
-                        OpTypePattern('Unsqueeze', inputs=[OpTypePattern('Squeeze', inputs=['Slice'])]),
-                        OpTypePattern('*'),
-                    ]),
+        OpTypePattern('Reshape', name='last_node', inputs=[
+            OpTypePattern('Reshape'),
+            OpTypePattern('Cast', inputs=[
+                OpTypePattern('Concat', inputs=[
+                    OpTypePattern('Unsqueeze', inputs=[OpTypePattern('Squeeze', inputs=['Slice'])]),
+                    OpTypePattern('*'),
                 ]),
             ]),
         ]),
