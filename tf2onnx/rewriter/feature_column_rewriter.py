@@ -159,7 +159,7 @@ def rewrite_feature_column(g, ops):
                     bounds = bounds.ints
                 elif len(bounds.floats) > 0:
                     bounds = bounds.floats
-                    assert all(b.is_integer() for b in bounds)
+                    # assert all(b.is_integer() for b in bounds)
                 else:
                     raise NotImplementedError
 
