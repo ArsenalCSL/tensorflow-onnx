@@ -142,7 +142,7 @@ def rewrite_feature_column(g, ops):
         # Insert feature column datatype specific decoding plugins.
         if s.op.op_type == 'Bucketize':
             bounds = s.attr['boundaries']
-            if i.output_dtypes[0] == TensorProto.FLOAT:
+            if r.output_dtypes[0] == TensorProto.FLOAT:
                 bounds = bounds.floats
                 pre_node = g.make_node(
                     'FloatBucketizePlugin',
